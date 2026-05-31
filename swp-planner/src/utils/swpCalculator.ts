@@ -67,39 +67,48 @@ const PERIODS_MAP: Record<WithdrawalFrequency, number> = {
   annually: 1,
 };
 
-function computeTax(
-  gains: number,
+/**
+ * Compute annual capital gains tax for an SWP withdrawal.
+ *
+ * We model each year's tax on the gains embedded in withdrawals:
+ *   gains = withdrawal × (returns / (opening_balance + returns))
+ * i.e. the proportion of the withdrawal that represents profit.
+ */
+function computeYearlyTax(
+  totalWithdrawal: number,
+  totalReturns: number,
+  openingBalance: number,
+  yearNumber: number,
   regime: TaxRegime,
-  holdingPeriods: number,
-  indexation: boolean
+  indexation: boolean,
 ): number {
-  if (gains <= 0) return 0;
+  if (totalWithdrawal <= 0 || totalReturns <= 0) return 0;
+
+  // Fraction of withdrawal that represents gains
+  const gainsFraction = totalReturns / (openingBalance + totalReturns);
+  const gainsInWithdrawal = totalWithdrawal * gainsFraction;
+
+  if (gainsInWithdrawal <= 0) return 0;
 
   switch (regime) {
-    case 'equity': {
-      const isLTCG = holdingPeriods >= 12;
-      if (isLTCG) {
-        const exemption = 125000;
-        const taxableGains = Math.max(0, gains - exemption);
-        return taxableGains * 0.125;
+    case 'equity':
+    case 'hybrid': {
+      // LTCG applies from year 2 onwards (held > 12 months); STCG in year 1
+      if (yearNumber === 1) {
+        // STCG @ 20%
+        return gainsInWithdrawal * 0.20;
       }
-      return gains * 0.20;
+      // LTCG @ 12.5% with ₹1.25 lakh annual exemption
+      const taxable = Math.max(0, gainsInWithdrawal - 125000);
+      return taxable * 0.125;
     }
     case 'debt': {
-      const isLTCG = holdingPeriods >= 36;
-      if (isLTCG && indexation) {
-        const indexedCost = gains * 0.72;
-        return Math.max(0, indexedCost) * 0.20;
+      // Post-2023 debt funds: gains taxed at 30% (slab rate approximation), no indexation
+      if (indexation && yearNumber > 3) {
+        // Pre-2023 investments with indexation: effective ~20% after indexed cost
+        return gainsInWithdrawal * 0.20;
       }
-      return gains * 0.30;
-    }
-    case 'hybrid': {
-      const isLTCG = holdingPeriods >= 12;
-      if (isLTCG) {
-        const taxableGains = Math.max(0, gains - 125000);
-        return taxableGains * 0.125;
-      }
-      return gains * 0.20;
+      return gainsInWithdrawal * 0.30;
     }
     default:
       return 0;
@@ -136,6 +145,7 @@ export function calculateSWP(inputs: SWPInputs): SWPResults {
   let corpusDepletionPeriod: number | null = null;
   let corpusDepletionYear: number | null = null;
 
+  // Yearly accumulators
   let yearlyOpen = initialCorpus;
   let yearlyTotalWithdrawal = 0;
   let yearlyTotalTax = 0;
@@ -144,64 +154,75 @@ export function calculateSWP(inputs: SWPInputs): SWPResults {
   let currentYear = 1;
 
   for (let period = 1; period <= totalPeriods; period++) {
+    // Track first depletion
     if (balance <= 0 && corpusDepletionPeriod === null) {
       corpusDepletionPeriod = period - 1;
       corpusDepletionYear = Math.ceil((period - 1) / periodsPerYear);
     }
 
-    const year = Math.ceil(period / periodsPerYear);
-
+    // Apply step-up at the start of each step-up interval (from period 2 onward)
     if (stepUpType !== 'none' && period > 1) {
-      const stepUpPeriod = stepUpFrequency * periodsPerYear;
-      if ((period - 1) % stepUpPeriod === 0) {
+      const stepUpPeriodInterval = stepUpFrequency * periodsPerYear;
+      if ((period - 1) % stepUpPeriodInterval === 0) {
         if (stepUpType === 'percentage') {
-          currentWithdrawal *= 1 + stepUpValue / 100;
+          currentWithdrawal = currentWithdrawal * (1 + stepUpValue / 100);
         } else {
-          currentWithdrawal += stepUpValue;
+          currentWithdrawal = currentWithdrawal + stepUpValue;
         }
       }
     }
 
     const openingBalance = balance;
     const returns = Math.max(0, balance) * periodRate;
-    const balanceWithReturns = balance + returns;
+    const balanceAfterReturns = balance + returns;
 
-    const grossWithdrawal = Math.min(currentWithdrawal, Math.max(0, balanceWithReturns));
-    const holdingMonths = (period / periodsPerYear) * 12;
-    const gains = grossWithdrawal * (periodRate / (1 + periodRate)) * 0.3;
-
-    let tax = 0;
-    if (taxEnabled && gains > 0) {
-      tax = computeTax(gains, taxRegime, holdingMonths, indexationBenefit);
-    }
-
-    const netWithdrawal = grossWithdrawal - tax;
+    // Can only withdraw what's available
+    const grossWithdrawal = Math.min(currentWithdrawal, Math.max(0, balanceAfterReturns));
     const inflationAdjusted = currentWithdrawal / Math.pow(1 + periodInflation, period);
 
-    balance = balanceWithReturns - grossWithdrawal;
+    balance = balanceAfterReturns - grossWithdrawal;
     if (balance < 0) balance = 0;
 
-    cumulativeWithdrawal += netWithdrawal;
+    cumulativeWithdrawal += grossWithdrawal;
 
+    // Period-level tax is zero; tax is computed at year-end (see yearlyData loop below)
     periodData.push({
       period,
-      year,
+      year: currentYear,
       openingBalance,
       withdrawal: grossWithdrawal,
-      tax,
-      netWithdrawal,
+      tax: 0,
+      netWithdrawal: grossWithdrawal,
       returns,
       closingBalance: balance,
       inflationAdjustedWithdrawal: inflationAdjusted,
       cumulativeWithdrawal,
     });
 
+    // Accumulate into yearly buckets
     yearlyTotalWithdrawal += grossWithdrawal;
-    yearlyTotalTax += tax;
-    yearlyTotalNetWithdrawal += netWithdrawal;
     yearlyTotalReturns += returns;
 
-    if (year !== currentYear || period === totalPeriods) {
+    // End of year: flush yearly bucket (every periodsPerYear periods, or last period)
+    const isEndOfYear = period % periodsPerYear === 0;
+    const isLastPeriod = period === totalPeriods;
+
+    if (isEndOfYear || isLastPeriod) {
+      // Compute annual tax on this year's withdrawals
+      const annualTax = taxEnabled
+        ? computeYearlyTax(
+            yearlyTotalWithdrawal,
+            yearlyTotalReturns,
+            yearlyOpen,
+            currentYear,
+            taxRegime,
+            indexationBenefit,
+          )
+        : 0;
+
+      yearlyTotalTax = annualTax;
+      yearlyTotalNetWithdrawal = yearlyTotalWithdrawal - annualTax;
+
       yearlyData.push({
         year: currentYear,
         openingBalance: yearlyOpen,
@@ -211,26 +232,29 @@ export function calculateSWP(inputs: SWPInputs): SWPResults {
         totalReturns: yearlyTotalReturns,
         closingBalance: balance,
       });
+
+      // Reset for next year
       yearlyOpen = balance;
       yearlyTotalWithdrawal = 0;
       yearlyTotalTax = 0;
       yearlyTotalNetWithdrawal = 0;
       yearlyTotalReturns = 0;
-      currentYear = year;
+      currentYear++;
     }
   }
 
   const lastPeriod = periodData[periodData.length - 1];
   const totalReturns = periodData.reduce((s, p) => s + p.returns, 0);
-  const totalTaxPaid = periodData.reduce((s, p) => s + p.tax, 0);
+  const totalTaxPaid = yearlyData.reduce((s, y) => s + y.totalTax, 0);
+  const totalWithdrawals = periodData.reduce((s, p) => s + p.withdrawal, 0);
 
   const sustainabilityRatio = lastPeriod ? lastPeriod.closingBalance / initialCorpus : 0;
   const sustainabilityScore = Math.min(100, Math.max(0, Math.round(sustainabilityRatio * 100)));
 
   const summary: SummaryData = {
-    totalWithdrawals: periodData.reduce((s, p) => s + p.withdrawal, 0),
+    totalWithdrawals,
     totalTaxPaid,
-    netWithdrawals: cumulativeWithdrawal,
+    netWithdrawals: totalWithdrawals - totalTaxPaid,
     totalReturnsEarned: totalReturns,
     finalCorpus: lastPeriod?.closingBalance ?? 0,
     corpusDepletionPeriod,
