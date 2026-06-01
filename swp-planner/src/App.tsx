@@ -62,7 +62,7 @@ export default function App() {
               <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">S</div>
               <div>
                 <h1 className="text-sm font-bold text-gray-900 leading-none">SWP Planner Pro</h1>
-                <p className="text-xs text-gray-500 leading-none">Systematic Withdrawal Plan Calculator</p>
+                <p className="text-xs text-gray-500 leading-none">Systematic Withdrawal Plan Calculator · v1.3</p>
               </div>
             </div>
           </div>
