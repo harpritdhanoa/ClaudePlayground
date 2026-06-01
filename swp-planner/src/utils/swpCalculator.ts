@@ -70,44 +70,48 @@ const PERIODS_MAP: Record<WithdrawalFrequency, number> = {
 /**
  * Compute annual capital gains tax for an SWP withdrawal.
  *
- * We model each year's tax on the gains embedded in withdrawals:
- *   gains = withdrawal × (returns / (opening_balance + returns))
- * i.e. the proportion of the withdrawal that represents profit.
+ * Gain fraction uses the economic model: if a fund has compounded at rate r
+ * since inception, by year y the cost basis fraction of any withdrawal is
+ * 1/(1+r)^y, so the gains fraction = 1 - 1/(1+r)^y.
+ *
+ * Examples at 13% p.a.:
+ *   Year  1: 11.5% of withdrawal is gains (STCG @ 20%)
+ *   Year  2: 21.7% gains (LTCG @ 12.5% above ₹1.25L exemption)
+ *   Year 10: 70.5% gains
+ *   Year 20: 91.3% gains
  */
 function computeYearlyTax(
   totalWithdrawal: number,
-  totalReturns: number,
-  openingBalance: number,
   yearNumber: number,
+  annualReturn: number,
   regime: TaxRegime,
   indexation: boolean,
 ): number {
-  if (totalWithdrawal <= 0 || totalReturns <= 0) return 0;
+  if (totalWithdrawal <= 0) return 0;
 
-  // Fraction of withdrawal that represents gains
-  const gainsFraction = totalReturns / (openingBalance + totalReturns);
-  const gainsInWithdrawal = totalWithdrawal * gainsFraction;
+  const r = annualReturn / 100;
+  const gainFraction = 1 - 1 / Math.pow(1 + r, yearNumber);
+  const gainsInWithdrawal = totalWithdrawal * gainFraction;
 
   if (gainsInWithdrawal <= 0) return 0;
 
   switch (regime) {
     case 'equity':
     case 'hybrid': {
-      // LTCG applies from year 2 onwards (held > 12 months); STCG in year 1
-      if (yearNumber === 1) {
-        // STCG @ 20%
+      if (yearNumber <= 1) {
+        // STCG @ 20% (held < 12 months)
         return gainsInWithdrawal * 0.20;
       }
-      // LTCG @ 12.5% with ₹1.25 lakh annual exemption
+      // LTCG @ 12.5% with ₹1.25L annual exemption
       const taxable = Math.max(0, gainsInWithdrawal - 125000);
       return taxable * 0.125;
     }
     case 'debt': {
-      // Post-2023 debt funds: gains taxed at 30% (slab rate approximation), no indexation
       if (indexation && yearNumber > 3) {
-        // Pre-2023 investments with indexation: effective ~20% after indexed cost
+        // Pre-2023 debt with indexation benefit: effective ~20%
         return gainsInWithdrawal * 0.20;
       }
+      // Post-2023 debt: taxed at 30% slab rate
       return gainsInWithdrawal * 0.30;
     }
     default:
@@ -212,9 +216,8 @@ export function calculateSWP(inputs: SWPInputs): SWPResults {
       const annualTax = taxEnabled
         ? computeYearlyTax(
             yearlyTotalWithdrawal,
-            yearlyTotalReturns,
-            yearlyOpen,
             currentYear,
+            annualReturn,
             taxRegime,
             indexationBenefit,
           )
