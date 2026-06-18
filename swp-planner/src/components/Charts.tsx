@@ -43,9 +43,9 @@ function axisFormatter(v: number) {
 
 export function CorpusChart({ yearlyData }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h4 className="font-semibold text-gray-800 mb-4">Corpus Over Time</h4>
-      <ResponsiveContainer width="100%" height={280}>
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+      <h4 className="font-semibold text-gray-800 mb-3 sm:mb-4 text-sm sm:text-base">Corpus Over Time</h4>
+      <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={yearlyData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <defs>
             <linearGradient id="corpusGrad" x1="0" y1="0" x2="0" y2="1">
@@ -55,7 +55,7 @@ export function CorpusChart({ yearlyData }: Props) {
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
           <XAxis dataKey="year" tick={{ fontSize: 12 }} label={{ value: 'Year', position: 'insideBottom', offset: -2, fontSize: 12 }} />
-          <YAxis tickFormatter={axisFormatter} tick={{ fontSize: 11 }} width={70} />
+          <YAxis tickFormatter={axisFormatter} tick={{ fontSize: 10 }} width={55} />
           <Tooltip content={<CurrencyTooltip />} />
           <Area type="monotone" dataKey="closingBalance" name="Corpus" stroke={COLORS.corpus} fill="url(#corpusGrad)" strokeWidth={2} dot={false} />
           <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" />
@@ -67,13 +67,13 @@ export function CorpusChart({ yearlyData }: Props) {
 
 export function WithdrawalReturnsChart({ yearlyData, inputs }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h4 className="font-semibold text-gray-800 mb-4">Withdrawals vs Returns</h4>
-      <ResponsiveContainer width="100%" height={280}>
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+      <h4 className="font-semibold text-gray-800 mb-3 sm:mb-4 text-sm sm:text-base">Withdrawals vs Returns</h4>
+      <ResponsiveContainer width="100%" height={220}>
         <BarChart data={yearlyData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }} barGap={2}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
           <XAxis dataKey="year" tick={{ fontSize: 12 }} />
-          <YAxis tickFormatter={axisFormatter} tick={{ fontSize: 11 }} width={70} />
+          <YAxis tickFormatter={axisFormatter} tick={{ fontSize: 10 }} width={55} />
           <Tooltip content={<CurrencyTooltip />} />
           <Legend wrapperStyle={{ fontSize: '12px' }} />
           <Bar dataKey="totalWithdrawal" name="Gross Withdrawal" fill={COLORS.withdrawal} radius={[2, 2, 0, 0]} />
@@ -102,13 +102,13 @@ export function CumulativeChart({ yearlyData }: { yearlyData: YearlyData[] }) {
   });
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h4 className="font-semibold text-gray-800 mb-4">Cumulative View</h4>
-      <ResponsiveContainer width="100%" height={280}>
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+      <h4 className="font-semibold text-gray-800 mb-3 sm:mb-4 text-sm sm:text-base">Cumulative View</h4>
+      <ResponsiveContainer width="100%" height={220}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
           <XAxis dataKey="year" tick={{ fontSize: 12 }} />
-          <YAxis tickFormatter={axisFormatter} tick={{ fontSize: 11 }} width={70} />
+          <YAxis tickFormatter={axisFormatter} tick={{ fontSize: 10 }} width={55} />
           <Tooltip content={<CurrencyTooltip />} />
           <Legend wrapperStyle={{ fontSize: '12px' }} />
           <Line type="monotone" dataKey="cumulativeWithdrawal" name="Cumulative Withdrawal" stroke={COLORS.withdrawal} strokeWidth={2} dot={false} />
